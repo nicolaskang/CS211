@@ -5,7 +5,11 @@ from spacetime_local.declarations import Producer, GetterSetter, Getter
 from lxml import html,etree
 import re, os
 from time import time
-import nltk
+from urllib2 import urlopen
+from bs4 import BeautifulSoup
+import hashlib
+
+
 try:
     # For python 2
     from urlparse import urlparse, parse_qs
@@ -16,10 +20,12 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 LOG_HEADER = "[CRAWLER]"
-url_count = 0 if not os.path.exists("successful_urls.txt") else (len(open("successful_urls.txt").readlines()) - 1)
-if url_count < 0:
-    url_count = 0
-MAX_LINKS_TO_DOWNLOAD = 20
+url_count = (set()
+    if not os.path.exists("successful_urls.txt") else
+    set([line.strip() for line in open("successful_urls.txt").readlines() if line.strip() != ""]))
+MAX_LINKS_TO_DOWNLOAD = 2000
+md5 =[]
+url_record = []
 
 @Producer(ProducedLink)
 @GetterSetter(OneUnProcessedGroup)
@@ -32,11 +38,12 @@ class CrawlerFrame(IApplication):
         # Set user agent string to IR W17 UnderGrad <student_id1>, <student_id2> ...
         # If Graduate studetn, change the UnderGrad part to Grad.
         self.UserAgentString = "IR W17 Grad 73784800, 29529834, 34564916"
-		
+        # Set user agent string to IR W17 UnderGrad <student_id1>, <student_id2> ...
+
         self.frame = frame
         assert(self.UserAgentString != None)
         assert(self.app_id != "")
-        if url_count >= MAX_LINKS_TO_DOWNLOAD:
+        if len(url_count) >= MAX_LINKS_TO_DOWNLOAD:
             self.done = True
 
     def initialize(self):
@@ -48,53 +55,109 @@ class CrawlerFrame(IApplication):
     def update(self):
         for g in self.frame.get(OneUnProcessedGroup):
             print "Got a Group"
-            outputLinks = process_url_group(g, self.UserAgentString)
+            outputLinks, urlResps = process_url_group(g, self.UserAgentString)
+            for urlResp in urlResps:
+                if urlResp.bad_url and self.UserAgentString not in set(urlResp.dataframe_obj.bad_url):
+                    urlResp.dataframe_obj.bad_url += [self.UserAgentString]
             for l in outputLinks:
                 if is_valid(l) and robot_manager.Allowed(l, self.UserAgentString):
                     lObj = ProducedLink(l, self.UserAgentString)
                     self.frame.add(lObj)
-        if url_count >= MAX_LINKS_TO_DOWNLOAD:
+        if len(url_count) >= MAX_LINKS_TO_DOWNLOAD:
             self.done = True
 
     def shutdown(self):
-        print "downloaded ", url_count, " in ", time() - self.starttime, " seconds."
+        print "downloaded ", len(url_count), " in ", time() - self.starttime, " seconds."
         pass
 
 def save_count(urls):
     global url_count
-    url_count += len(urls)
-    with open("successful_urls.txt", "a") as surls:
-        surls.write("\n".join(urls) + "\n")
+    urls = set(urls).difference(url_count)
+    url_count.update(urls)
+    if len(urls):
+        with open("successful_urls.txt", "a") as surls:
+            surls.write(("\n".join(urls) + "\n").encode("utf-8"))
 
 def process_url_group(group, useragentstr):
     rawDatas, successfull_urls = group.download(useragentstr, is_valid)
     save_count(successfull_urls)
-    return extract_next_links(rawDatas)
-    
+    return extract_next_links(rawDatas), rawDatas
+
 #######################################################################################
 '''
 STUB FUNCTIONS TO BE FILLED OUT BY THE STUDENT.
 '''
 def extract_next_links(rawDatas):
     outputLinks = list()
-    for index in range(0,len(rawDatas)):
-        print "this is "+str(rawDatas[index][0])
-        dom =  html.fromstring(rawDatas[index][1])
-        for link in dom.xpath('//a/@href'): # select the url in href for all a tags(links)
-            if link[0:7]=='http://' or link[0:8] == 'https://':
-                outputLinks.append(link)
-            elif link[0]=='/' or link[0]=='.':
-                if rawDatas[index][0][0:7]=='http://' or rawDatas[index][0][0:8] == 'https://':
-                    outputLinks.append(rawDatas[index][0].split("/")[0]+"//"+rawDatas[index][0].split("/")[2]+link)
+
     '''
-    rawDatas is a list of tuples -> [(url1, raw_content1), (url2, raw_content2), ....]
+    rawDatas is a list of objs -> [raw_content_obj1, raw_content_obj2, ....]
+    Each obj is of type UrlResponse  declared at L28-42 datamodel/search/datamodel.py
     the return of this function should be a list of urls in their absolute form
     Validation of link via is_valid function is done later (see line 42).
-    It is not required to remove duplicates that have already been downloaded. 
+    It is not required to remove duplicates that have already been downloaded.
     The frontier takes care of that.
 
     Suggested library: lxml
     '''
+    # print("__________________________")
+    # print(len(rawDatas))
+    # os.sleep(100)
+    for item in rawDatas:
+        if not rawDatas:
+            # if raw data is empty, return it.
+            return rawDatas
+        elif not item.content or len(item.error_message) != 0 or not is_valid(item.url):
+            # content is empty and error_message exists.
+            # bad url
+            # check if is valid. maybe item.url is .txt, instead of a accessible page.
+            item.bad_url = True
+            continue
+        else:
+            dom  = html.fromstring(item.content)
+            Lists = dom.xpath('//a/@href') 
+            if len(Lists) == 0:
+                # there is no url inside given page.
+                # continue to process next link.
+                continue
+            for link in Lists: # select the url in href for all a tags(links)
+                check_vaild = False
+                print "test url" + str(link)
+                if not link:
+                    # if link is empty
+                    # continue to process next link
+                    continue
+                elif link[0:7]=='http://' or link[0:8] == 'https://':
+                    # if url start with 'https://' or 'http://'
+                    # check if it is valid.
+                    check_vaild = is_valid(unicode(link))
+                elif link[0]=='/':
+                    #  or link[0]=='.'
+                    # link is a relative path.
+                    # if url start with '/' or '.'
+                    # complete it with prefix
+                    # check whether full url is valid.
+                    if item.url[0][0:7]=='http://' or item.url[0][0:8] == 'https://':
+                        link = item.url[0]+link
+                        check_vaild = is_valid(unicode(link))
+                elif link[0:1]=='..':
+                    # link start with ..
+                    urlsplit = item.url[0].split("/")
+                    if len(urlsplit)<=3:
+                        continue
+                    else:
+                        UrlWithoutLastHier = urlsplit[0]+"//"+urlsplit[2]
+                        for index in range(3,len(urlsplit)-1):
+                            UrlWithoutLastHier = UrlWithoutLastHier +'/'+ urlsplit[index]
+                        link = UrlWithoutLastHier + link[2:]
+                    check_vaild = is_valid(unicode(link))
+                else:
+                    continue
+                    # if valid
+                    # outputLinks append this link
+                if check_vaild:
+                    outputLinks.append(link)
+    # type cast again to make sure every link is unique.
     outputLinks = list(set(outputLinks))
     return outputLinks
 
@@ -105,34 +168,89 @@ def is_valid(url):
 
     This is a great place to filter out crawler traps.
     '''
+
     parsed = urlparse(url)
-    scheme = parsed.scheme
-    netloc = parsed.netloc.split('.')
-    #print(netloc)
-    netloc = ''.join(i +'.' if i != '' else '' for i in netloc)[0:-1]
-    OldWeb = scheme+"://"+netloc
-    xpath = parsed.path
-    try:
-        NewPath = xpath[0:xpath.index("php")+len("php")]
-        Web = OldWeb+NewPath
-    except:
-        Web = OldWeb+xpath
-    print(Web)
-    if scheme not in set(["http", "https"]):
+    if parsed.scheme not in set(["http", "https", "www"]):
         return False
     try:
-        condition= ".ics.uci.edu" in Web \
+        return ".ics.uci.edu" in parsed.hostname \
             and not re.match(".*\.(css|js|bmp|gif|jpe?g|ico" + "|png|tiff?|mid|mp2|mp3|mp4"\
-            + "|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf" \
+            + "|wav|txt|py|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf" \
             + "|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso|epub|dll|cnf|tgz|sha1" \
             + "|thmx|mso|arff|rtf|jar|csv"\
-            + "|rm|smil|wmv|swf|wma|zip|rar|gz)$", Web.lower())
-        return condition
+            + "|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()) \
+            and PageDuplicate(str(url)) \
+            and UrlDuplicate(str(url)) \
+            and UrlConfuseHier(str(url))
+
     except TypeError:
         print ("TypeError for ", parsed)
+"""
+    UrlConfuseHier
+        Function:
+            CHECK THERE IS NO ".." IN GIVEN URL
+        Args:
+            paraml: Url
+        Returns:
+            If given URl contains of "..", return false.
+            else return true
+"""
+def UrlConfuseHier(url):
+    if ".." in url:
+        return False
+    else:
+        return True
+"""
+    UrlDuplicate
+        Function:
+            Make sure the URL is new
+        Args:
+            param1: Url
+        Returns:
+            If we had visited this URL return False, otherwise it return True
+"""
+def UrlDuplicate(url):
+    if url in url_record:
+        return False
+    else:
+        url_record.append(url)
+        return True
+"""
+    PageDuplicate
+        Function:
+            Make sure the page we extracted, it should be unique, even there are same
+            URL. We try our best to analysis the content fo html page
+        Args:
+            param1: Url
+        Returns:
+            If we doesn't have the content of this page, it will return True.
+            If we can't analysis the content or the content we already have it,
+            it will return False
+"""
 
+def PageDuplicate(url):
+    md5_checker = True
+    MAX_FILE_SIZE = 1024 * 1024 * 1024
+    print (url) 
+    try:
+        page = urlopen(urlopen(url).geturl())
+        r = page.read(MAX_FILE_SIZE)
+        soup = BeautifulSoup(r,'html.parser')
+    except:
+        return False
+    try:
+        md5_h = hashlib.md5(soup.find('head').text.encode('utf-8')).hexdigest()
+        md5_b = hashlib.md5(soup.find('body').text.encode('utf-8')).hexdigest()
+    except:
+        md5_checker = False
 
-
-
-
+    if md5_checker:
+        content = (md5_h, md5_b)
+        if content in md5:
+            return False
+        else:
+            md5.append(content)
+            return True
+    else:
+        return True
 
