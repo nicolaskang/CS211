@@ -210,14 +210,19 @@ def is_valid(url):
 
     This is a great place to filter out crawler traps.
     '''
-
+    try:
+        url = url.encode("ascii")
+    except UnicodeEncodeError as e:
+        print "cannot convert to ascii"
+        return False
     parsed = urlparse(url)
+
     if parsed.scheme not in set(["http", "https", "www"]):
         return False
     try:
         return ".ics.uci.edu" in parsed.hostname \
             and not re.match(".*\.(css|js|bmp|gif|jpe?g|ico" + "|png|tiff?|mid|mp2|mp3|mp4"\
-            + "|wav|txt|py|avi|mov|xgmml|ss|lif|psp|bst|c|java|sge|mpeg|ram|m4v|mkv|ogg|ogv|pdf" \
+            + "|wav|txt|py|avi|mov|xgmml|bed|ss|lif|psp|bst|c|java|sge|mpeg|ram|m4v|mkv|ogg|ogv|pdf" \
             + "|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso|epub|dll|cnf|tgz|sha1" \
             + "|thmx|mso|arff|rtf|jar|csv"\
             + "|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()) \
