@@ -146,8 +146,10 @@ def extract_next_links(rawDatas):
                 continue
             for link in Lists: # select the url in href for all a tags(links)
                 # for output information:
+                split_error=False
                 try:
-                    link = link.decode('utf-8')
+                    link.encode('ascii')
+                    link.decode('utf-8')
                 except UnicodeEncodeError as e:
                     print "cannot decode link, bad url"
                     continue
@@ -159,47 +161,67 @@ def extract_next_links(rawDatas):
                     # if link is empty
                     # continue to process next link
                     continue
-                elif link[0:7]=='http://' or link[0:8] == 'https://':
-                    # if url start with 'https://' or 'http://'
-                    # check if it is valid.
-                    check_vaild = is_valid(unicode(link))
-                elif link[0]=='/':
-                    #  or link[0]=='.'
-                    # link is a relative path.
-                    # if url start with '/' or '.'
-                    # complete it with prefix
-                    # check whether full url is valid.
-                    if item.url[0][0:7]=='http://' or item.url[0][0:8] == 'https://':
-                        link = item.url[0]+link
-                        check_vaild = is_valid(unicode(link))
-                elif link[0:1]=='..':
-                    # link start with ..
-                    urlsplit = item.url[0].split("/")
-                    if len(urlsplit)<=3:
+                try:
+                    splitByColon = link.split(":")
+                except e:
+                    # error means it is relative path and no mailto: no javascript:
+                    split_error = True
+                    # set this boolean vari for a clear way.
+                if split_error == True:
+                    # there is no colon inside url
+                    # must be relative path
+                    # this kind of path is accessible in full path form.
+                    if link == "":
                         continue
-                    else:
-                        UrlWithoutLastHier = urlsplit[0]+"//"+urlsplit[2]
-                        for index in range(3,len(urlsplit)-1):
-                            UrlWithoutLastHier = UrlWithoutLastHier +'/'+ urlsplit[index]
-                        link = UrlWithoutLastHier + link[2:]
-                    check_vaild = is_valid(unicode(link))
+                    if link == "#":
+                        continue
+                    if link[0] == '/':
+                        link = link[1:]
+                        while(link[0]=='/'):
+                            link = link[1:]
+                        link = item.url[0]+'/'+link
+                        check_vaild = is_valid(unicode(link))
+                    elif link[0:2]=='../':
+                        # link start with ..
+                        dotnumber = 1
+                        link = link[3:]
+                        while(link[0:2]=='../'):
+                            dotnumber = dotnumber+1
+                            link = link[3:]
+                        urlsplit = item.url[0].split("/")
+                        if len(urlsplit)<=3+dotnumber:
+                            continue
+                        else:
+                            UrlWithoutLastHier = urlsplit[0]+"//"+urlsplit[2]
+                            for index in range(3,len(urlsplit)-dotnumber):
+                                UrlWithoutLastHier = UrlWithoutLastHier +'/'+ urlsplit[index]
+                            link = UrlWithoutLastHier + '/'+link[2:]
+                        check_vaild = is_valid(unicode(link))
                 else:
-                    continue
-                    # if valid
+                    # there is colon inside url
+                    # it could be http:
+                    if link[0:7]=='http://' or link[0:8] == 'https://':
+                        # if url start with 'https://' or 'http://'
+                        # check if it is valid.
+                        check_vaild = is_valid(unicode(link))
+                    else:
+                    # cannot figure out any possible, logical url with more than one colons
+                        continue
                     # outputLinks append this link
                 if check_vaild:
                     numberLinkInItem = numberLinkInItem+1
                     outputLinks.append(link)
     # type cast again to make sure every link is unique.
-
-    if numberLinkInItem == 0:
-        average_time = 0
-    else:
-        average_time = (time()- start_time)/numberLinkInItem
+    if numberLinkInItem != 0:
+        average_time = average_time + (time()- start_time)
     sub_links = sub_links+numberLinkInItem
-    with open("information.txt", "a") as info:
+    average_time_tmp =0
+    if sub_links!=0:
+        average_time_tmp = average_time/sub_links
+    with open("information.txt", "w") as info:
         info.write("number of bad link|Max sub link|Average download time|Total number of sub urls"+'\n')
-        info.write(str(numBadLink)+'\t'+str(MaxLink)+'\t'+str(average_time)+'\t'+str(sub_links)+'\n')
+        info.write(str(numBadLink)+'\t'+str(MaxLink)+'\t'+str(float(average_time_tmp))+'\t'+str(sub_links)+'\n')
+        info.close()
     outputLinks = list(set(outputLinks))
     return outputLinks
 
@@ -222,7 +244,7 @@ def is_valid(url):
     try:
         return ".ics.uci.edu" in parsed.hostname \
             and not re.match(".*\.(css|js|bmp|gif|jpe?g|ico" + "|png|tiff?|mid|mp2|mp3|mp4"\
-            + "|wav|txt|py|avi|mov|xgmml|bed|ss|lif|psp|bst|c|java|sge|mpeg|ram|m4v|mkv|ogg|ogv|pdf" \
+            + "|wav|txt|odp|py|avi|mov|xgmml|bed|ss|lif|psp|bst|c|java|sge|mpeg|ram|m4v|mkv|ogg|ogv|pdf" \
             + "|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso|epub|dll|cnf|tgz|sha1" \
             + "|thmx|mso|arff|rtf|jar|csv"\
             + "|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()) \
@@ -243,7 +265,9 @@ def is_valid(url):
             else return true
 """
 def UrlConfuseHier(url):
-    if ".." in url:
+    if ".." in url or "./" in url or "../" in url:
+        print "this is url with confusion of hierarchy"
+        print(url)
         return False
     else:
         return True
