@@ -26,7 +26,10 @@ url_count = (set()
 MAX_LINKS_TO_DOWNLOAD = 2000
 md5 =[]
 url_record = []
-
+numBadLink=0
+MaxLink=-1
+average_time=0
+sub_links=0
 @Producer(ProducedLink)
 @GetterSetter(OneUnProcessedGroup)
 class CrawlerFrame(IApplication):
@@ -64,6 +67,13 @@ class CrawlerFrame(IApplication):
                     lObj = ProducedLink(l, self.UserAgentString)
                     self.frame.add(lObj)
         if len(url_count) >= MAX_LINKS_TO_DOWNLOAD:
+            # global  average_time
+            # average_time = (time()-self.starttime)/len(url_count)
+            # with open("information.txt", "a") as info:
+            #     info.write("number of bad link is "+str(numBadLink))
+            #     info.write("Max sub link is "+str(MaxLink))
+            #     info.write("Average download time is "+str(average_time))
+            #     info.write("Total number of sub urls is "+str(sub_links))
             self.done = True
 
     def shutdown(self):
@@ -76,7 +86,7 @@ def save_count(urls):
     url_count.update(urls)
     if len(urls):
         with open("successful_urls.txt", "a") as surls:
-            surls.write(("\n".join(urls) + "\n").encode("utf-8"))
+            surls.write(("\n".join(urls) + "\n").encode("utf-8",'ignore'))
 
 def process_url_group(group, useragentstr):
     rawDatas, successfull_urls = group.download(useragentstr, is_valid)
@@ -89,7 +99,7 @@ STUB FUNCTIONS TO BE FILLED OUT BY THE STUDENT.
 '''
 def extract_next_links(rawDatas):
     outputLinks = list()
-
+    global numBadLink,MaxLink,average_time,sub_links
     '''
     rawDatas is a list of objs -> [raw_content_obj1, raw_content_obj2, ....]
     Each obj is of type UrlResponse  declared at L28-42 datamodel/search/datamodel.py
@@ -100,27 +110,49 @@ def extract_next_links(rawDatas):
 
     Suggested library: lxml
     '''
-    # print("__________________________")
-    # print(len(rawDatas))
-    # os.sleep(100)
+    #print("__________________________")
+    #print(not rawDatas)
+    #os.sleep(100)
+    start_time = time()
+    numberLinkInItem = 0
     for item in rawDatas:
+        print "all info is_Redi,final,httpcode,headers,error"
+        print item.is_redirected
+        print item.final_url
+        print item.http_code
+        print item.headers
+        print item.error_message
         if not rawDatas:
             # if raw data is empty, return it.
             return rawDatas
-        elif not item.content or len(item.error_message) != 0 or not is_valid(item.url):
+        elif not item.content \
+                or len(item.error_message) != 0 \
+                or not UrlConfuseHier(str(item.url)) \
+                or item.is_redirected == True \
+                or item.http_code!=200:
             # content is empty and error_message exists.
             # bad url
             # check if is valid. maybe item.url is .txt, instead of a accessible page.
+            print str(item.url) + "is a badddddddddd!!!!"
             item.bad_url = True
+            numBadLink = numBadLink+1
             continue
         else:
             dom  = html.fromstring(item.content)
-            Lists = dom.xpath('//a/@href') 
+            Lists = dom.xpath('//a/@href')
             if len(Lists) == 0:
                 # there is no url inside given page.
                 # continue to process next link.
                 continue
             for link in Lists: # select the url in href for all a tags(links)
+                # for output information:
+                try:
+                    link = link.decode('utf-8')
+                except UnicodeEncodeError as e:
+                    print "cannot decode link, bad url"
+                    continue
+                if len(Lists)>MaxLink:
+                    MaxLink = len(Lists)
                 check_vaild = False
                 print "test url" + str(link)
                 if not link:
@@ -156,8 +188,18 @@ def extract_next_links(rawDatas):
                     # if valid
                     # outputLinks append this link
                 if check_vaild:
+                    numberLinkInItem = numberLinkInItem+1
                     outputLinks.append(link)
     # type cast again to make sure every link is unique.
+
+    if numberLinkInItem == 0:
+        average_time = 0
+    else:
+        average_time = (time()- start_time)/numberLinkInItem
+    sub_links = sub_links+numberLinkInItem
+    with open("information.txt", "a") as info:
+        info.write("number of bad link|Max sub link|Average download time|Total number of sub urls"+'\n')
+        info.write(str(numBadLink)+'\t'+str(MaxLink)+'\t'+str(average_time)+'\t'+str(sub_links)+'\n')
     outputLinks = list(set(outputLinks))
     return outputLinks
 
@@ -175,7 +217,7 @@ def is_valid(url):
     try:
         return ".ics.uci.edu" in parsed.hostname \
             and not re.match(".*\.(css|js|bmp|gif|jpe?g|ico" + "|png|tiff?|mid|mp2|mp3|mp4"\
-            + "|wav|txt|py|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf" \
+            + "|wav|txt|py|avi|mov|xgmml|ss|lif|psp|bst|c|java|sge|mpeg|ram|m4v|mkv|ogg|ogv|pdf" \
             + "|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso|epub|dll|cnf|tgz|sha1" \
             + "|thmx|mso|arff|rtf|jar|csv"\
             + "|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()) \
@@ -239,8 +281,8 @@ def PageDuplicate(url):
     except:
         return False
     try:
-        md5_h = hashlib.md5(soup.find('head').text.encode('utf-8')).hexdigest()
-        md5_b = hashlib.md5(soup.find('body').text.encode('utf-8')).hexdigest()
+        md5_h = hashlib.md5(soup.find('head').text.encode('utf-8','ignore')).hexdigest()
+        md5_b = hashlib.md5(soup.find('body').text.encode('utf-8','ignore')).hexdigest()
     except:
         md5_checker = False
 
