@@ -131,23 +131,20 @@ def extract_next_links(rawDatas):
             print "rawDatas is empty"
             # if raw data is empty, return it.
             return item
-        if is_valid(item.url)==False:
-            item.bad_url = True
-            print "bad url"
-            print item.url
-            continue
-        # if item.is_redirected == True:
-        #     if not is_valid(item.final_url):
-        #         continue
-        #     else:
-        #         item.url = item.final_url
-        if not item.content or len(item.error_message) != 0:
+        if item.is_redirected == True and item.final_url != None:
+            if is_valid(item.final_url) == False:
+                continue
+            else:
+                item.url = item.final_url
+        if  not item.content or \
+            len(item.error_message) != 0:
             # content is empty and error_message exists.
             # bad url
             # check if is valid. maybe item.url is .txt, instead of a accessible page.
-            print str(item.url) + "is a badddddddddd!!!!"
             item.bad_url = True
             numBadLink = numBadLink+1
+            print "bad url"
+            print item.url
             continue
         else:
             dom  = html.fromstring(item.content)
@@ -330,7 +327,7 @@ def PageDuplicate(url):
     MAX_FILE_SIZE = 1024 * 1024 * 1024
     print (url) 
     try:
-        page = urlopen(urlopen(url).geturl())
+        page = urlopen(url,timeout=1)
         r = page.read(MAX_FILE_SIZE)
         soup = BeautifulSoup(r,'html.parser')
     except:
