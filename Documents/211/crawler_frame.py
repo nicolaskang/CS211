@@ -181,17 +181,19 @@ def extract_next_links(rawDatas):
                         continue
                     if link == "#":
                         continue
+                    if link[0:2] == './':
+                        link = link[2:]
                     if link[0] == '/':
                         link = link[1:]
                         while(link[0]=='/'):
                             link = link[1:]
                         link = item.url[0]+'/'+link
                         check_vaild = is_valid(unicode(link))
-                    elif link[0:2]=='../':
+                    elif link[0:3]=='../':
                         # link start with ..
                         dotnumber = 1
                         link = link[3:]
-                        while(link[0:2]=='../'):
+                        while(link[0:3]=='../'):
                             dotnumber = dotnumber+1
                             link = link[3:]
                         urlsplit = item.url[0].split("/")
@@ -202,6 +204,17 @@ def extract_next_links(rawDatas):
                             for index in range(3,len(urlsplit)-dotnumber):
                                 UrlWithoutLastHier = UrlWithoutLastHier +'/'+ urlsplit[index]
                             link = UrlWithoutLastHier + '/'+link[2:]
+                        check_vaild = is_valid(unicode(link))
+                    elif link[0]=='?':
+                        HasQuestionMark = True
+                        try:
+                            SplitByQuestionMark = item.url[0].split("?")
+                        except e:
+                            HasQuestionMark = False
+                        if HasQuestionMark == True:
+                            link = SplitByQuestionMark[0:-1] + link
+                        else:
+                            link = item.url[0] + link
                         check_vaild = is_valid(unicode(link))
                 else:
                     # there is colon inside url
