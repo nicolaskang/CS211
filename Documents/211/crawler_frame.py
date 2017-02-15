@@ -38,6 +38,7 @@ class CrawlerFrame(IApplication):
         self.starttime = time()
         # Set app_id <student_id1>_<student_id2>...
         self.app_id = "73784800_29529834_34564916"
+        #34564916
         # Set user agent string to IR W17 UnderGrad <student_id1>, <student_id2> ...
         # If Graduate studetn, change the UnderGrad part to Grad.
         self.UserAgentString = "IR W17 Grad 73784800, 29529834, 34564916"
@@ -110,10 +111,14 @@ def extract_next_links(rawDatas):
 
     Suggested library: lxml
     '''
+    #print(rawDatas)
     #print("__________________________")
     #print(not rawDatas)
     #os.sleep(100)
     start_time = time()
+    if rawDatas == []:
+        print "empty"
+        return rawDatas
     numberLinkInItem = 0
     for item in rawDatas:
         print "all info is_Redi,final,httpcode,headers,error"
@@ -122,10 +127,11 @@ def extract_next_links(rawDatas):
         print item.http_code
         print item.headers
         print item.error_message
-        if not rawDatas:
+        if item == []:
+            print "rawDatas is empty"
             # if raw data is empty, return it.
-            return rawDatas
-        if not is_valid(item.url):
+            return item
+        if is_valid(item.url)==False:
             item.bad_url = True
             print "bad url"
             print item.url
@@ -135,7 +141,7 @@ def extract_next_links(rawDatas):
         #         continue
         #     else:
         #         item.url = item.final_url
-        elif not item.content or len(item.error_message) != 0:
+        if not item.content or len(item.error_message) != 0:
             # content is empty and error_message exists.
             # bad url
             # check if is valid. maybe item.url is .txt, instead of a accessible page.
@@ -251,13 +257,14 @@ def is_valid(url):
 
     This is a great place to filter out crawler traps.
     '''
+    #print(url)
     try:
-        url = url.encode("ascii")
+        url.encode("ascii")
     except UnicodeEncodeError as e:
         print "cannot convert to ascii"
         return False
     parsed = urlparse(url)
-    print parsed.schemes
+    #print parsed.schemes
     if parsed.scheme not in set(["http", "https", "www"]):
         return False
     try:
