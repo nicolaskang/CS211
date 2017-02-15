@@ -125,11 +125,17 @@ def extract_next_links(rawDatas):
         if not rawDatas:
             # if raw data is empty, return it.
             return rawDatas
-        elif not item.content \
-                or len(item.error_message) != 0 \
-                or not UrlConfuseHier(str(item.url)) \
-                or item.is_redirected == True \
-                or item.http_code!=200:
+        if not is_valid(item.url):
+            item.bad_url = True
+            print "bad url"
+            print item.url
+            continue
+        # if item.is_redirected == True:
+        #     if not is_valid(item.final_url):
+        #         continue
+        #     else:
+        #         item.url = item.final_url
+        elif not item.content or len(item.error_message) != 0:
             # content is empty and error_message exists.
             # bad url
             # check if is valid. maybe item.url is .txt, instead of a accessible page.
@@ -238,7 +244,7 @@ def is_valid(url):
         print "cannot convert to ascii"
         return False
     parsed = urlparse(url)
-
+    print parsed.schemes
     if parsed.scheme not in set(["http", "https", "www"]):
         return False
     try:
