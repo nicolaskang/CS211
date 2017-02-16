@@ -5,7 +5,7 @@ from spacetime_local.declarations import Producer, GetterSetter, Getter
 from lxml import html,etree
 import re, os
 from time import time
-from urllib2 import urlopen
+from urllib2 import urlopen,Request
 from bs4 import BeautifulSoup
 import hashlib
 
@@ -23,7 +23,7 @@ LOG_HEADER = "[CRAWLER]"
 url_count = (set()
     if not os.path.exists("successful_urls.txt") else
     set([line.strip() for line in open("successful_urls.txt").readlines() if line.strip() != ""]))
-MAX_LINKS_TO_DOWNLOAD = 2000
+MAX_LINKS_TO_DOWNLOAD = 3000
 md5 =[]
 url_record = []
 numBadLink=0
@@ -108,13 +108,8 @@ def extract_next_links(rawDatas):
     Validation of link via is_valid function is done later (see line 42).
     It is not required to remove duplicates that have already been downloaded.
     The frontier takes care of that.
-
     Suggested library: lxml
     '''
-    #print(rawDatas)
-    #print("__________________________")
-    #print(not rawDatas)
-    #os.sleep(100)
     start_time = time()
     if rawDatas == []:
         print "empty"
@@ -128,16 +123,26 @@ def extract_next_links(rawDatas):
         print item.headers
         print item.error_message
         if item == []:
-            print "rawDatas is empty"
             # if raw data is empty, return it.
-            return item
-        if item.is_redirected == True and item.final_url != None:
-            if is_valid(item.final_url) == False:
+            print "rawDatas is empty"
+            continue
+        if item.is_redirected == True:
+            # and item.final_url != None
+            # if is_valid(item.final_url) == False:
+            #     numBadLink = numBadLink+1
+            #     continue
+            # else:
+            #     item.url = item.final_url
+            if item.final_url == None:
                 continue
             else:
-                item.url = item.final_url
-        if  not item.content or \
-            len(item.error_message) != 0:
+                if abs(len(item.url) - len(item.final_url))==1:
+                    item.url = item.final_url
+                else:
+                    continue
+        if not (UrlDuplicate(item.url) and PageDuplicate(item.url)):
+            continue
+        if item.content==[] or len(item.error_message) != 0 or item.http_code!=200:
             # content is empty and error_message exists.
             # bad url
             # check if is valid. maybe item.url is .txt, instead of a accessible page.
@@ -147,77 +152,107 @@ def extract_next_links(rawDatas):
             print item.url
             continue
         else:
+            parsed = urlparse(item.url)
+            SplitPathBySlash = parsed.path.split("/")
+            print "lets check split by slash"
+            print SplitPathBySlash
+            loc = parsed.scheme+"://"+parsed.netloc
+            #outputLinks.append(loc)
+            for i in range(0,len(SplitPathBySlash)-1):
+                loc = loc +SplitPathBySlash[i]+"/"
+                outputLinks.append(loc)
+
             dom  = html.fromstring(item.content)
             Lists = dom.xpath('//a/@href')
             if len(Lists) == 0:
                 # there is no url inside given page.
                 # continue to process next link.
                 continue
+            print "here is all href"
+            Lists = list(set(Lists))
             for link in Lists: # select the url in href for all a tags(links)
                 # for output information:
-                split_error=False
-                try:
-                    link.encode('ascii')
-                    link.decode('utf-8')
-                except UnicodeEncodeError as e:
-                    print "cannot decode link, bad url"
-                    continue
-                if len(Lists)>MaxLink:
+                split_error = False
+                if len(Lists) > MaxLink:
                     MaxLink = len(Lists)
                 check_vaild = False
-                print "test url" + str(link)
+                print "test start"
                 if not link:
                     # if link is empty
                     # continue to process next link
                     continue
-                try:
-                    splitByColon = link.split(":")
-                except e:
-                    # error means it is relative path and no mailto: no javascript:
+                # first step:
+                # split by ":"
+                splitByColon = link.split(":")
+                if splitByColon[0]==link:
                     split_error = True
-                    # set this boolean vari for a clear way.
                 if split_error == True:
                     # there is no colon inside url
                     # must be relative path
                     # this kind of path is accessible in full path form.
-                    if link == "":
-                        continue
-                    if link == "#":
-                        continue
                     if link[0:2] == './':
                         link = link[2:]
-                    if link[0] == '/':
-                        link = link[1:]
-                        while(link[0]=='/'):
-                            link = link[1:]
-                        link = item.url[0]+'/'+link
+                    if link[0]=='/' and link[-1]=='/':
+                        continue
+                    if link == "":
+                        continue
+
+                    if link == "#":
+                        link = item.url+link
                         check_vaild = is_valid(unicode(link))
+                    elif link[0] == '/':
+                        link = link[1:]
+                        if link !="":
+                            while(link[0]=='/'):
+                                link = link[1:]
+                            if item.url[-1]!="/":
+                                link = item.url+'/'+link
+                            else:
+                                link = item.url+link
+                        else:
+                            if item.url[-1]=='/':
+                                link = item.url
+                            else:
+                                link = item.url+'/'
+                            check_vaild = is_valid(unicode(link))
+
                     elif link[0:3]=='../':
                         # link start with ..
                         dotnumber = 1
                         link = link[3:]
-                        while(link[0:3]=='../'):
+                        while(link!="" and link[0:3]=='../'):
                             dotnumber = dotnumber+1
                             link = link[3:]
-                        urlsplit = item.url[0].split("/")
-                        if len(urlsplit)<=3+dotnumber:
+                        urlsplit = item.url.split("/")
+                        #print urlsplit
+                        if item.url[-1]=="/":
+                            length = len(urlsplit)-1
+                        else:
+                            length = len(urlsplit)
+                        if length<3+dotnumber:
                             continue
                         else:
                             UrlWithoutLastHier = urlsplit[0]+"//"+urlsplit[2]
-                            for index in range(3,len(urlsplit)-dotnumber):
+                            for index in range(3,length-dotnumber):
                                 UrlWithoutLastHier = UrlWithoutLastHier +'/'+ urlsplit[index]
-                            link = UrlWithoutLastHier + '/'+link[2:]
+                            link = UrlWithoutLastHier + '/'+link
                         check_vaild = is_valid(unicode(link))
                     elif link[0]=='?':
                         HasQuestionMark = True
-                        try:
-                            SplitByQuestionMark = item.url[0].split("?")
-                        except e:
+                        SplitByQuestionMark = item.url.split("?")
+                        if SplitByQuestionMark[0] == item.url:
                             HasQuestionMark = False
                         if HasQuestionMark == True:
-                            link = SplitByQuestionMark[0:-1] + link
+                            link = "".join([i for i in SplitByQuestionMark[0:-1]]) + link
                         else:
-                            link = item.url[0] + link
+                            link = item.url + link
+                        check_vaild = is_valid(unicode(link))
+                    else:
+                        SplitPathBySlash = item.url.split("/")
+                        if SplitPathBySlash[-1] == '':
+                            link = item.url + link
+                        else:
+                            link = "/".join(i for i in SplitPathBySlash[0:-1]) +'/'+ link
                         check_vaild = is_valid(unicode(link))
                 else:
                     # there is colon inside url
@@ -229,7 +264,8 @@ def extract_next_links(rawDatas):
                     else:
                     # cannot figure out any possible, logical url with more than one colons
                         continue
-                    # outputLinks append this link
+                print "here is the link"
+                print link
                 if check_vaild:
                     numberLinkInItem = numberLinkInItem+1
                     outputLinks.append(link)
@@ -245,20 +281,17 @@ def extract_next_links(rawDatas):
         info.write(str(numBadLink)+'\t'+str(MaxLink)+'\t'+str(float(average_time_tmp))+'\t'+str(sub_links)+'\n')
         info.close()
     outputLinks = list(set(outputLinks))
+    print "here is all links available"
+    print outputLinks
     return outputLinks
 
 def is_valid(url):
     '''
     Function returns True or False based on whether the url has to be downloaded or not.
     Robot rules and duplication rules are checked separately.
-
     This is a great place to filter out crawler traps.
     '''
-    #print(url)
-    try:
-        url.encode("ascii")
-    except UnicodeEncodeError as e:
-        print "cannot convert to ascii"
+    if EncodeError(url):
         return False
     parsed = urlparse(url)
     #print parsed.schemes
@@ -267,20 +300,28 @@ def is_valid(url):
     try:
         return ".ics.uci.edu" in parsed.hostname \
             and not re.match(".*\.(css|js|bmp|gif|jpe?g|ico" + "|png|tiff?|mid|mp2|mp3|mp4"\
-            + "|wav|txt|odp|py|avi|mov|xgmml|bed|ss|lif|psp|bst|c|java|sge|mpeg|ram|m4v|mkv|ogg|ogv|pdf" \
-            + "|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso|epub|dll|cnf|tgz|sha1" \
+            + "|wav|txt|odp|py|avi|mov|JPG|xgmml|vhd|r|rkt|pps|fasta|bed|ss|lif|psp|bst|c|java|sge|mpeg|ram|m4v|mkv|ogg|ogv|pdf" \
+            + "|ps|eps|tex|ppt|pptx|doc|ppsx|docx|xls|xlsx|names|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso|epub|dll|cnf|tgz|sha1" \
             + "|thmx|mso|arff|rtf|jar|csv"\
             + "|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()) \
-            and PageDuplicate(str(url)) \
-            and UrlDuplicate(str(url)) \
-            and UrlConfuseHier(str(url))
-
+            and not UrlConfuseHier(str(url))
     except TypeError:
         print ("TypeError for ", parsed)
 """
+    EncodeError:
+
+"""
+def EncodeError(url):
+    try:
+        url.encode('ascii')
+    except UnicodeEncodeError as e:
+        print "cannot decode link, bad url"
+        return True
+    return False
+"""
     UrlConfuseHier
         Function:
-            CHECK THERE IS NO ".." IN GIVEN URL
+            CHECK THERE IS NO ".." or "./" IN GIVEN URL
         Args:
             paraml: Url
         Returns:
@@ -288,12 +329,15 @@ def is_valid(url):
             else return true
 """
 def UrlConfuseHier(url):
-    if ".." in url or "./" in url or "../" in url:
+    if ".." in url or "./" in url:
         print "this is url with confusion of hierarchy"
-        print(url)
-        return False
-    else:
         return True
+    elif len(url.split("//"))>=2:
+        print "this url has two slash, which means confuse hierarchy"
+        return True
+    else:
+        return False
+
 """
     UrlDuplicate
         Function:
@@ -327,9 +371,14 @@ def PageDuplicate(url):
     MAX_FILE_SIZE = 1024 * 1024 * 1024
     print (url) 
     try:
-        page = urlopen(url,timeout=1)
-        r = page.read(MAX_FILE_SIZE)
-        soup = BeautifulSoup(r,'html.parser')
+        req = Request(url)
+        response = urlopen(req,timeout=1)
+        mes = response.info()
+        typeMes = mes.gettype()
+        if typeMes !="text/html":
+            return False
+            r = response.read(MAX_FILE_SIZE)
+            soup = BeautifulSoup(r,'html.parser')
     except:
         return False
     try:
@@ -346,5 +395,4 @@ def PageDuplicate(url):
             md5.append(content)
             return True
     else:
-        return True
-
+	    return True
