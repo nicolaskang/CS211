@@ -301,21 +301,22 @@ def is_valid(url):
         return ".ics.uci.edu" in parsed.hostname \
             and not re.match(".*\.(css|js|bmp|gif|jpe?g|ico" + "|png|tiff?|mid|mp2|mp3|mp4"\
             + "|wav|txt|odp|py|avi|mov|JPG|xgmml|vhd|r|rkt|pps|fasta|bed|ss|lif|psp|bst|c|java|sge|mpeg|ram|m4v|mkv|ogg|ogv|pdf" \
-            + "|ps|eps|tex|ppt|pptx|doc|ppsx|docx|xls|xlsx|names|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso|epub|dll|cnf|tgz|sha1" \
+            + "|ps|eps|tex|ppt|pptx|doc|ppsx|docx|xls|apk|xlsx|names|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso|epub|dll|cnf|tgz|sha1" \
             + "|thmx|mso|arff|rtf|jar|csv"\
             + "|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()) \
-            and not UrlConfuseHier(str(url))
+            and not UrlConfuseHier(str(url)) \
+            and not re.match("http://www.ics.uci.edu/~cs224",url)
     except TypeError:
         print ("TypeError for ", parsed)
+
 """
     EncodeError:
-
 """
 def EncodeError(url):
     try:
         url.encode('ascii')
     except UnicodeEncodeError as e:
-        print "cannot decode link, bad url"
+        print "cannot decode link, bad url or content"
         return True
     return False
 """
@@ -332,7 +333,7 @@ def UrlConfuseHier(url):
     if ".." in url or "./" in url:
         print "this is url with confusion of hierarchy"
         return True
-    elif len(url.split("//"))>=2:
+    elif len(url.split("//"))>2:
         print "this url has two slash, which means confuse hierarchy"
         return True
     else:
